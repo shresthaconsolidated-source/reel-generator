@@ -9,11 +9,12 @@ from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, ImageClip, AudioFileClip, concatenate_videoclips
 import moviepy.video.fx.all as vfx
 
-async def generate_tts(text, voice="en-US-ChristopherNeural", output_file="tts_out.mp3"):
-    communicate = edge_tts.Communicate(text, voice)
+async def generate_tts(text, voice="en-US-SteffanNeural", rate="+15%", output_file="tts_out.mp3"):
+    # SteffanNeural is an intense/commanding news-style voice. We bump the rate slightly for TikTok pacing.
+    communicate = edge_tts.Communicate(text, voice, rate=rate)
     await communicate.save(output_file)
 
-def create_outro_frame(count, effort_text, output_path):
+def create_outro_frame(damage_text, effort_text, chest_text, output_path):
     img = Image.new('RGB', (1080, 1920), color=(0,0,0))
     d = ImageDraw.Draw(img)
     
@@ -30,9 +31,9 @@ def create_outro_frame(count, effort_text, output_path):
             font_medium = font_large
             
     # Draw text
-    d.text((100, 700), f"DAMAGE = {count}", fill=(255, 50, 50), font=font_large)
+    d.text((100, 700), f"DAMAGE = {damage_text}", fill=(255, 50, 50), font=font_large)
     d.text((100, 900), f"EFFORT = {effort_text}", fill=(255, 255, 255), font=font_medium)
-    d.text((100, 1100), f"CHEST = DESTROYED", fill=(255, 255, 255), font=font_medium)
+    d.text((100, 1100), f"CHEST = {chest_text}", fill=(255, 255, 255), font=font_medium)
     
     img.save(output_path)
 
@@ -115,7 +116,7 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
     out.release()
     return count
 
-def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, effort_text, output_path, start_fast, end_fast, speed_factor=2.0, progress_callback=None):
+def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, damage_text, effort_text, chest_text, output_path, start_fast, end_fast, speed_factor=2.0, progress_callback=None):
     temp_files = []
     
     def get_temp_file(suffix):
@@ -167,11 +168,11 @@ def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, ef
             
         # 3. CREATE OUTRO
         outro_audio_path = get_temp_file('.mp3')
-        outro_text = f"Damage report. {follower_count} pushups completed. Effort was {effort_text}. Chest is completely destroyed."
+        outro_text = f"Damage report. {follower_count} pushups completed. Effort was {effort_text}. Chest is {chest_text}."
         asyncio.run(generate_tts(outro_text, output_file=outro_audio_path))
         
         outro_img_path = get_temp_file('.png')
-        create_outro_frame(follower_count, effort_text, outro_img_path)
+        create_outro_frame(damage_text, effort_text, chest_text, outro_img_path)
         
         outro_audio = AudioFileClip(outro_audio_path)
         outro_clip = ImageClip(outro_img_path).set_duration(outro_audio.duration + 0.5).set_audio(outro_audio)

@@ -11,7 +11,9 @@ st.markdown("Create a fully automated TikTok/Reels pushup challenge video. We ge
 
 st.subheader("1. Setup your Challenge")
 follower_count = st.number_input("Follower Count (e.g. 20)", min_value=1, value=20, step=1)
+damage_text = st.text_input("Damage Rating", value="20")
 effort_text = st.text_input("Effort Rating", value="Absolutely Brutal")
+chest_text = st.text_input("Chest Status", value="DESTROYED")
 
 st.subheader("2. Upload Files")
 screenshot_file = st.file_uploader("Upload Follower Screenshot (PNG/JPG)", type=["png", "jpg", "jpeg"])
@@ -50,7 +52,9 @@ if st.button("Generate My Reel"):
                     main_video_path=temp_video,
                     screenshot_path=temp_screenshot,
                     follower_count=follower_count,
+                    damage_text=damage_text,
                     effort_text=effort_text,
+                    chest_text=chest_text,
                     output_path=temp_out,
                     start_fast=start_fast,
                     end_fast=end_fast,
