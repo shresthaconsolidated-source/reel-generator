@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, ImageClip, AudioFileClip, concatenate_videoclips
 import moviepy.video.fx.all as vfx
 
-async def generate_tts(text, voice="en-US-GuyNeural", rate="+5%", pitch="-20Hz", output_file="tts_out.mp3"):
+async def generate_tts(text, voice="en-US-GuyNeural", rate="+5%", pitch="-35Hz", output_file="tts_out.mp3"):
     # GuyNeural is a passionate voice. We lower the pitch significantly to make it sound like a deep game announcer.
     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
     await communicate.save(output_file)
@@ -17,30 +17,33 @@ async def generate_tts(text, voice="en-US-GuyNeural", rate="+5%", pitch="-20Hz",
 def create_outro_frame(damage_text, effort_text, chest_text, output_path):
     img = Image.new('RGB', (1080, 1920), color=(0,0,0))
     d = ImageDraw.Draw(img)
-    
-    # Try to load a bold font, fallback to default
+    # Use our newly downloaded cinematic font
     try:
-        font_large = ImageFont.truetype("arialbd.ttf", 100)
-        font_medium = ImageFont.truetype("arialbd.ttf", 80)
-    except:
-        try:
-            font_large = ImageFont.truetype("arial.ttf", 100)
-            font_medium = ImageFont.truetype("arial.ttf", 80)
-        except:
-            font_large = ImageFont.load_default()
-            font_medium = font_large
+        font_large = ImageFont.truetype("BebasNeue.ttf", 220)
+        font_medium = ImageFont.truetype("BebasNeue.ttf", 150)
+    except Exception as e:
+        print(f"Error loading BebasNeue: {e}")
+        font_large = ImageFont.load_default()
+        font_medium = font_large
             
     # Calculate text sizes to center them
-    def draw_centered_text(y, text, font, fill):
+    def draw_centered_text(y, text, font, fill, shadow_color=(20, 0, 0)):
         bbox = d.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
         x = (1080 - w) / 2
+        
+        # Add drop shadow for cinematic effect
+        if shadow_color:
+            d.text((x+5, y+5), text, fill=shadow_color, font=font)
+        
         d.text((x, y), text, fill=fill, font=font)
 
     # Draw centered text
-    draw_centered_text(700, f"DAMAGE = {damage_text}", font_large, (255, 50, 50))
-    draw_centered_text(900, f"EFFORT = {effort_text}", font_medium, (255, 255, 255))
-    draw_centered_text(1100, f"CHEST = {chest_text}", font_medium, (255, 255, 255))
+    draw_centered_text(500, f"DAMAGE", font_large, (255, 65, 108))
+    draw_centered_text(700, f"{damage_text}", font_large, (255, 65, 108))
+    
+    draw_centered_text(1100, f"EFFORT: {effort_text}", font_medium, (255, 255, 255), (50,50,50))
+    draw_centered_text(1300, f"CHEST: {chest_text}", font_medium, (255, 255, 255), (50,50,50))
     
     img.save(output_path)
 
