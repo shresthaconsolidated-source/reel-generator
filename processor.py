@@ -58,8 +58,9 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_temp_path, fourcc, fps, (width, height))
     
+    # Load both pose and face models
     pose_model = YOLO('yolov8n-pose.pt')
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    face_model = YOLO('yolov8n-face.pt')
     
     count = 0
     stage = None
@@ -73,19 +74,28 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
         if progress_callback and total_frames > 0 and frame_idx % 10 == 0:
             progress_callback(f"Analyzing Pushups (Frame {frame_idx}/{total_frames})", frame_idx / total_frames)
             
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-        for (x, y, w, h) in faces:
-            pad_w = int(w * 0.2)
-            pad_h = int(h * 0.2)
-            x_min = max(0, x - pad_w)
-            y_min = max(0, y - pad_h)
-            x_max = min(width, x + w + pad_w)
-            y_max = min(height, y + h + pad_h)
-            face_roi = frame[y_min:y_max, x_min:x_max]
-            if face_roi.size > 0:
-                blurred_face = cv2.GaussianBlur(face_roi, (99, 99), 30)
-                frame[y_min:y_max, x_min:x_max] = blurred_face
+        # --- Face Blurring using YOLO ---
+        face_results = face_model(frame, verbose=False)
+        for result in face_results:
+            if result.boxes is not None and len(result.boxes.xyxy) > 0:
+                for box in result.boxes.xyxy:
+                    x1, y1, x2, y2 = map(int, box.cpu().numpy())
+                    
+                    # Add some padding to the face bounding box
+                    w = x2 - x1
+                    h = y2 - y1
+                    pad_w = int(w * 0.2)
+                    pad_h = int(h * 0.2)
+                    
+                    x_min = max(0, x1 - pad_w)
+                    y_min = max(0, y1 - pad_h)
+                    x_max = min(width, x2 + pad_w)
+                    y_max = min(height, y2 + pad_h)
+                    
+                    face_roi = frame[y_min:y_max, x_min:x_max]
+                    if face_roi.size > 0:
+                        blurred_face = cv2.GaussianBlur(face_roi, (99, 99), 30)
+                        frame[y_min:y_max, x_min:x_max] = blurred_face
                 
         results = pose_model(frame, verbose=False)
         for result in results:
