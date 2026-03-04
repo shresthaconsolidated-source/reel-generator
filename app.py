@@ -113,7 +113,7 @@ st.markdown('<p class="sub-title">Automate your TikTok/Reels pushup challenges i
 st.markdown('<div class="glass-container"><div class="section-header">1. Challenge Details</div>', unsafe_allow_html=True)
 col_a, col_b = st.columns(2)
 with col_a:
-    follower_count = st.number_input("Follower Count", min_value=1, value=20, step=1)
+    follower_count = st.number_input("Follower Count", min_value=0, value=20, step=1)
     damage_text = st.text_input("Damage Rating", value="20")
 with col_b:
     effort_text = st.text_input("Effort Rating", value="Absolutely Brutal")

@@ -9,9 +9,9 @@ from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, ImageClip, AudioFileClip, concatenate_videoclips
 import moviepy.video.fx.all as vfx
 
-async def generate_tts(text, voice="en-US-SteffanNeural", rate="+15%", output_file="tts_out.mp3"):
-    # SteffanNeural is an intense/commanding news-style voice. We bump the rate slightly for TikTok pacing.
-    communicate = edge_tts.Communicate(text, voice, rate=rate)
+async def generate_tts(text, voice="en-US-GuyNeural", rate="+5%", pitch="-20Hz", output_file="tts_out.mp3"):
+    # GuyNeural is a passionate voice. We lower the pitch significantly to make it sound like a deep game announcer.
+    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
     await communicate.save(output_file)
 
 def create_outro_frame(damage_text, effort_text, chest_text, output_path):
@@ -30,10 +30,17 @@ def create_outro_frame(damage_text, effort_text, chest_text, output_path):
             font_large = ImageFont.load_default()
             font_medium = font_large
             
-    # Draw text
-    d.text((100, 700), f"DAMAGE = {damage_text}", fill=(255, 50, 50), font=font_large)
-    d.text((100, 900), f"EFFORT = {effort_text}", fill=(255, 255, 255), font=font_medium)
-    d.text((100, 1100), f"CHEST = {chest_text}", fill=(255, 255, 255), font=font_medium)
+    # Calculate text sizes to center them
+    def draw_centered_text(y, text, font, fill):
+        bbox = d.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        x = (1080 - w) / 2
+        d.text((x, y), text, fill=fill, font=font)
+
+    # Draw centered text
+    draw_centered_text(700, f"DAMAGE = {damage_text}", font_large, (255, 50, 50))
+    draw_centered_text(900, f"EFFORT = {effort_text}", font_medium, (255, 255, 255))
+    draw_centered_text(1100, f"CHEST = {chest_text}", font_medium, (255, 255, 255))
     
     img.save(output_path)
 
@@ -139,7 +146,14 @@ def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, da
         # 1. CREATE INTRO
         if progress_callback: progress_callback("Generating AI Voice Intro...", 0.0)
         intro_audio_path = get_temp_file('.mp3')
-        intro_text = f"1 new follower equals 1 pushup. We got {follower_count} new followers, so today we do {follower_count} pushups."
+        
+        if follower_count == 0:
+            intro_text = "1 new follower equals 1 pushup. We got 0 new followers today. So today... we do 0 pushups."
+        elif follower_count == 1:
+            intro_text = "1 new follower equals 1 pushup. We got 1 new follower, so today we do 1 pushup."
+        else:
+            intro_text = f"1 new follower equals 1 pushup. We got {follower_count} new followers, so today we do {follower_count} pushups."
+            
         asyncio.run(generate_tts(intro_text, output_file=intro_audio_path))
         
         intro_audio = AudioFileClip(intro_audio_path)
@@ -178,7 +192,7 @@ def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, da
             
         # 3. CREATE OUTRO
         outro_audio_path = get_temp_file('.mp3')
-        outro_text = f"Damage report. {follower_count} pushups completed. Effort was {effort_text}. Chest is {chest_text}."
+        outro_text = f"Damage {damage_text}. Effort {effort_text}. Chest {chest_text}."
         asyncio.run(generate_tts(outro_text, output_file=outro_audio_path))
         
         outro_img_path = get_temp_file('.png')
