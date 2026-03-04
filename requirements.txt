@@ -1,0 +1,7 @@
+streamlit
+opencv-python
+ultralytics
+numpy
+moviepy==1.0.3
+edge-tts
+Pillow

@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+tts_out.mp3
+yolov8n-pose.pt
+.env
