@@ -8,6 +8,9 @@ import edge_tts
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, ImageClip, AudioFileClip, concatenate_videoclips
 import moviepy.video.fx.all as vfx
+from faster_whisper import WhisperModel
+from word2number import w2n
+import re
 
 async def generate_tts(text, voice="en-US-GuyNeural", rate="+5%", pitch="-35Hz", output_file="tts_out.mp3"):
     # GuyNeural is a passionate voice. We lower the pitch significantly to make it sound like a deep game announcer.
@@ -47,17 +50,48 @@ def create_outro_frame(damage_text, effort_text, chest_text, output_path):
     
     img.save(output_path)
 
-def calculate_angle(a, b, c):
-    a = np.array(a) # First
-    b = np.array(b) # Mid
-    c = np.array(c) # End
-    radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
-    angle = np.abs(radians*180.0/np.pi)
-    if angle > 180.0:
-        angle = 360 - angle
-    return angle
-
 def process_main_video(input_path, output_temp_path, progress_callback=None):
+    # --- 1. Audio Extraction & Transcription ---
+    if progress_callback: progress_callback("Extracting Audio...", 0.1)
+    
+    audio_path = input_path.replace(".mp4", "_audio.wav").replace(".mov", "_audio.wav")
+    try:
+        video_clip = VideoFileClip(input_path)
+        if video_clip.audio is not None:
+            video_clip.audio.write_audiofile(audio_path, logger=None)
+        video_clip.close()
+    except Exception as e:
+        print(f"Failed to extract audio: {e}")
+        # If no audio or failure, we will just proceed with no numbers detected
+        pass
+
+    timestamps = [] # List of tuples: (time_in_seconds, parsed_number_as_int)
+    
+    if os.path.exists(audio_path):
+        if progress_callback: progress_callback("Transcribing Pushup Counts (Whisper AI)...", 0.2)
+        # Using tiny/base model for speed. It runs locally.
+        model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        
+        # Word-level timestamps to know exactly when a number was spoken
+        segments, info = model.transcribe(audio_path, word_timestamps=True, language="en")
+        
+        for segment in segments:
+            for word in segment.words:
+                clean_word = re.sub(r'[^a-zA-Z0-9]', '', word.word).strip().lower()
+                
+                # Check if it's a number word or a digit
+                try:
+                    num = w2n.word_to_num(clean_word)
+                    timestamps.append((word.start, num))
+                    print(f"Detected number: {num} at {word.start}s")
+                except ValueError:
+                    # Not a parsable number word, skip
+                    pass
+        
+        try: os.remove(audio_path)
+        except: pass
+
+    # --- 2. Video Frame Processing ---
     cap = cv2.VideoCapture(input_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0 or np.isnan(fps): fps = 30
@@ -68,21 +102,37 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_temp_path, fourcc, fps, (width, height))
     
-    # Load both pose and face models
-    pose_model = YOLO('yolov8n-pose.pt')
+    # Load face model (Pose model removed as per new architecture)
     face_model = YOLO('yolov8n-face.pt')
     
-    count = 0
-    stage = None
     frame_idx = 0
+    max_count = 0
     
+    # We will "flash" the number on screen for 1 second after it is spoken
+    flash_duration_frames = int(fps * 1.0)
+    current_flash_number = None
+    flash_frames_remaining = 0
+    
+    # Sort timestamps chronologically just in case
+    timestamps.sort(key=lambda x: x[0])
+    next_timestamp_idx = 0
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
         
         frame_idx += 1
+        current_time_sec = frame_idx / fps
+        
         if progress_callback and total_frames > 0 and frame_idx % 10 == 0:
-            progress_callback(f"Analyzing Pushups (Frame {frame_idx}/{total_frames})", frame_idx / total_frames)
+            progress_callback(f"Rendering Video Visuals (Frame {frame_idx}/{total_frames})", 0.3 + (0.6 * (frame_idx / total_frames)))
+            
+        # Check if we should start a new flash based on whisper timestamps
+        while next_timestamp_idx < len(timestamps) and current_time_sec >= timestamps[next_timestamp_idx][0]:
+            current_flash_number = timestamps[next_timestamp_idx][1]
+            max_count = max(max_count, current_flash_number) # Keep track of max pushups spoken
+            flash_frames_remaining = flash_duration_frames
+            next_timestamp_idx += 1
             
         # --- Face Blurring using YOLO ---
         face_results = face_model(frame, verbose=False)
@@ -91,7 +141,7 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
                 for box in result.boxes.xyxy:
                     x1, y1, x2, y2 = map(int, box.cpu().numpy())
                     
-                    # Add some padding to the face bounding box
+                    # Add padding
                     w = x2 - x1
                     h = y2 - y1
                     pad_w = int(w * 0.2)
@@ -106,35 +156,19 @@ def process_main_video(input_path, output_temp_path, progress_callback=None):
                     if face_roi.size > 0:
                         blurred_face = cv2.GaussianBlur(face_roi, (99, 99), 30)
                         frame[y_min:y_max, x_min:x_max] = blurred_face
-                
-        results = pose_model(frame, verbose=False)
-        for result in results:
-            if result.keypoints is not None and len(result.keypoints.xy) > 0:
-                keypoints = result.keypoints.xy[0].cpu().numpy()
-                if len(keypoints) >= 10:
-                    try:
-                        shoulder = keypoints[5]
-                        elbow = keypoints[7]
-                        wrist = keypoints[9]
-                        if shoulder[0] > 0 and elbow[0] > 0 and wrist[0] > 0:
-                            angle = calculate_angle(shoulder, elbow, wrist)
-                            if angle > 160:
-                                if stage == "down":
-                                    count += 1
-                                    stage = "up"
-                            if angle < 90:
-                                stage = "down"
-                    except: pass
         
-        cv2.rectangle(frame, (0,0), (225, 73), (245,117,16), -1)
-        cv2.putText(frame, 'PUSHUPS', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(frame, str(count), (10,60), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
+        # --- Number Screen Overlay ---
+        if flash_frames_remaining > 0 and current_flash_number is not None:
+            # Draw giant red number in the top left
+            cv2.putText(frame, str(current_flash_number), (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 6, (0, 0, 255), 15, cv2.LINE_AA)
+            cv2.putText(frame, str(current_flash_number), (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 5, cv2.LINE_AA)
+            flash_frames_remaining -= 1
         
         out.write(frame)
         
     cap.release()
     out.release()
-    return count
+    return max_count
 
 def generate_reels_pipeline(main_video_path, screenshot_path, follower_count, damage_text, effort_text, chest_text, output_path, start_fast, end_fast, speed_factor=2.0, progress_callback=None):
     temp_files = []
